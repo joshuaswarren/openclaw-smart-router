@@ -1,0 +1,245 @@
+{
+  "id": "openclaw-smart-router",
+  "kind": "utility",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": ["manual", "dry-run", "auto"],
+        "default": "dry-run",
+        "description": "Operation mode: manual (CLI only), dry-run (preview), auto (apply automatically)"
+      },
+      "debug": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable debug logging"
+      },
+      "providers": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "quotaSource": {
+              "type": "string",
+              "enum": ["api", "manual", "unlimited"],
+              "default": "manual",
+              "description": "How to track quota for this provider"
+            },
+            "limit": {
+              "type": "number",
+              "description": "Token or request limit for manual tracking"
+            },
+            "quotaType": {
+              "type": "string",
+              "enum": ["tokens", "requests"],
+              "default": "tokens",
+              "description": "What the limit measures"
+            },
+            "resetSchedule": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["daily", "weekly", "monthly", "fixed"],
+                  "description": "Reset schedule type"
+                },
+                "dayOfWeek": {
+                  "type": "number",
+                  "description": "Day of week for weekly reset (0=Sunday)"
+                },
+                "dayOfMonth": {
+                  "type": "number",
+                  "description": "Day of month for monthly reset"
+                },
+                "fixedDate": {
+                  "type": "string",
+                  "description": "ISO date for next fixed reset"
+                },
+                "hour": {
+                  "type": "number",
+                  "default": 0,
+                  "description": "Hour of reset (0-23)"
+                },
+                "timezone": {
+                  "type": "string",
+                  "default": "UTC",
+                  "description": "Timezone for reset"
+                }
+              }
+            },
+            "budget": {
+              "type": "object",
+              "properties": {
+                "monthlyLimit": {
+                  "type": "number",
+                  "description": "Monthly budget in USD"
+                },
+                "alertThreshold": {
+                  "type": "number",
+                  "default": 0.8,
+                  "description": "Alert when spend exceeds this fraction of budget"
+                }
+              }
+            },
+            "capabilities": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": ["huggingface", "manual", "infer"],
+                  "default": "infer",
+                  "description": "Where to get capability scores"
+                },
+                "scores": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  },
+                  "description": "Manual capability scores (0-1)"
+                }
+              }
+            },
+            "local": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["mlx", "ollama", "vllm", "lmstudio", "generic"],
+                  "description": "Local model server type"
+                },
+                "endpoint": {
+                  "type": "string",
+                  "description": "Server endpoint URL"
+                },
+                "models": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Available model IDs"
+                }
+              }
+            },
+            "tier": {
+              "type": "string",
+              "enum": ["premium", "standard", "budget", "free", "local"],
+              "default": "standard",
+              "description": "Cost tier for routing decisions"
+            },
+            "priority": {
+              "type": "number",
+              "default": 50,
+              "description": "Priority within tier (higher = preferred)"
+            }
+          }
+        },
+        "description": "Provider-specific configuration"
+      },
+      "qualityThresholds": {
+        "type": "object",
+        "properties": {
+          "coding": {
+            "type": "number",
+            "default": 0.8,
+            "description": "Minimum capability score for coding tasks"
+          },
+          "reasoning": {
+            "type": "number",
+            "default": 0.75,
+            "description": "Minimum capability score for reasoning tasks"
+          },
+          "creative": {
+            "type": "number",
+            "default": 0.6,
+            "description": "Minimum capability score for creative tasks"
+          },
+          "simple": {
+            "type": "number",
+            "default": 0.4,
+            "description": "Minimum capability score for simple tasks"
+          }
+        },
+        "description": "Minimum quality thresholds by task type"
+      },
+      "predictionHorizonHours": {
+        "type": "number",
+        "default": 24,
+        "description": "How far ahead to predict usage"
+      },
+      "warningThreshold": {
+        "type": "number",
+        "default": 0.8,
+        "description": "Warn when usage exceeds this fraction of limit"
+      },
+      "criticalThreshold": {
+        "type": "number",
+        "default": 0.95,
+        "description": "Critical alert when usage exceeds this fraction"
+      },
+      "optimizationIntervalMinutes": {
+        "type": "number",
+        "default": 60,
+        "description": "How often to run optimization checks in auto mode"
+      },
+      "localModelPreference": {
+        "type": "string",
+        "enum": ["never", "simple-only", "when-available", "prefer"],
+        "default": "simple-only",
+        "description": "When to route to local models"
+      },
+      "stateFile": {
+        "type": "string",
+        "description": "Override state file location"
+      }
+    }
+  },
+  "uiHints": {
+    "mode": {
+      "label": "Operation Mode",
+      "help": "manual: CLI only, dry-run: preview changes, auto: apply automatically"
+    },
+    "debug": {
+      "label": "Debug Mode",
+      "advanced": true
+    },
+    "providers": {
+      "label": "Provider Configuration",
+      "advanced": true,
+      "help": "Configure quota tracking per provider"
+    },
+    "qualityThresholds": {
+      "label": "Quality Thresholds",
+      "advanced": true,
+      "help": "Minimum capability scores by task type"
+    },
+    "predictionHorizonHours": {
+      "label": "Prediction Horizon (hours)",
+      "advanced": true,
+      "placeholder": "24"
+    },
+    "warningThreshold": {
+      "label": "Warning Threshold",
+      "advanced": true,
+      "placeholder": "0.8"
+    },
+    "criticalThreshold": {
+      "label": "Critical Threshold",
+      "advanced": true,
+      "placeholder": "0.95"
+    },
+    "optimizationIntervalMinutes": {
+      "label": "Optimization Interval (minutes)",
+      "advanced": true,
+      "placeholder": "60"
+    },
+    "localModelPreference": {
+      "label": "Local Model Preference",
+      "help": "When to route tasks to local models"
+    },
+    "stateFile": {
+      "label": "State File Path",
+      "advanced": true,
+      "placeholder": "~/.openclaw/extensions/openclaw-smart-router/state.json"
+    }
+  }
+}

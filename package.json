@@ -1,0 +1,62 @@
+{
+  "name": "openclaw-smart-router",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Intelligent model routing for OpenClaw with quota prediction, task classification, and automatic optimization.",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "llm",
+    "routing",
+    "token-optimization",
+    "quota-management",
+    "ai-agent",
+    "model-routing",
+    "cost-optimization",
+    "mlx",
+    "ollama",
+    "vllm",
+    "lmstudio"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joshuaswarren/openclaw-smart-router.git"
+  },
+  "homepage": "https://github.com/joshuaswarren/openclaw-smart-router#readme",
+  "bugs": {
+    "url": "https://github.com/joshuaswarren/openclaw-smart-router/issues"
+  },
+  "author": "Joshua Warren",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json"
+  ],
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "openclaw": {
+    "plugin": "./openclaw.plugin.json",
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}
