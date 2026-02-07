@@ -116,6 +116,17 @@ export function registerCli(
           console.log(result);
         });
 
+      // set-reset-date - Set when a provider's quota resets
+      router
+        .command("set-reset-date")
+        .description("Set provider quota reset date (for manual tracking)")
+        .argument("<provider>", "Provider ID")
+        .argument("<date>", "Reset date (e.g., 'Feb 12 7AM', '2026-02-12T07:00', 'in 5 days')")
+        .action(async (providerId: string, dateStr: string) => {
+          const result = await handleSetResetDate(state, saveState, providerId, dateStr);
+          console.log(result);
+        });
+
       // analyze - Analyze for optimization opportunities
       router
         .command("analyze")
@@ -224,8 +235,18 @@ async function handleStatus(
       `${statusIcon} ${p.id.padEnd(15)} [${bar}] ${pct.padStart(5)}%${pctSource}  (${p.tier})`
     );
 
+    // Show reset time from quota info or from state
+    const stateQuota = state.quotas[p.id];
     if (p.quota?.resetAt) {
       lines.push(`   Resets: ${p.quota.resetAt.toLocaleString()}`);
+    } else if (stateQuota?.nextReset && stateQuota.nextReset > Date.now()) {
+      const resetDate = new Date(stateQuota.nextReset);
+      const hoursUntil = (stateQuota.nextReset - Date.now()) / (1000 * 60 * 60);
+      const daysUntil = Math.floor(hoursUntil / 24);
+      const remainingHours = Math.round(hoursUntil % 24);
+      const timeUntil = daysUntil > 0 ? `${daysUntil}d ${remainingHours}h` : `${remainingHours}h`;
+
+      lines.push(`   Resets: ${resetDate.toLocaleString()} (${timeUntil})`);
     }
   }
 
@@ -306,27 +327,45 @@ async function handleSetUsage(
   providerId: string,
   valueStr: string
 ): Promise<string> {
+  // Initialize provider if not exists
   if (!state.quotas[providerId]) {
-    return `Unknown provider: ${providerId}\n\nAvailable: ${Object.keys(state.quotas).join(", ") || "(none)"}`;
+    state.quotas[providerId] = {
+      used: 0,
+      limit: 0,
+      lastReset: Date.now(),
+      nextReset: 0,
+    };
   }
 
-  let used: number;
   const currentLimit = state.quotas[providerId].limit;
 
+  // Handle percentage input (e.g., "79%")
   if (valueStr.endsWith("%")) {
     const percent = parseFloat(valueStr.slice(0, -1));
-    if (isNaN(percent)) {
-      return `Invalid percentage: ${valueStr}`;
+    if (isNaN(percent) || percent < 0 || percent > 100) {
+      return `Invalid percentage: ${valueStr} (must be 0-100)`;
     }
-    if (currentLimit === 0) {
-      return `Cannot set percentage for ${providerId}: no limit configured.\nSet a token count instead (e.g., 'openclaw router set-usage ${providerId} 1000000')`;
+
+    // Store percentage directly for providers without known limits (like Anthropic)
+    state.quotas[providerId].percentUsed = percent;
+    state.quotas[providerId].percentSource = "manual";
+
+    if (currentLimit > 0) {
+      // If we have a limit, also calculate token usage
+      const used = Math.round((percent / 100) * currentLimit);
+      tracker.setUsage(providerId, used);
+      saveState();
+      return `Set ${providerId} to ${percent}% (${used.toLocaleString()} tokens)`;
     }
-    used = (percent / 100) * currentLimit;
-  } else {
-    used = parseInt(valueStr, 10);
-    if (isNaN(used)) {
-      return `Invalid value: ${valueStr}`;
-    }
+
+    saveState();
+    return `Set ${providerId} to ${percent}% (manual tracking)`;
+  }
+
+  // Handle token count input
+  const used = parseInt(valueStr, 10);
+  if (isNaN(used) || used < 0) {
+    return `Invalid value: ${valueStr}`;
   }
 
   tracker.setUsage(providerId, used);
@@ -334,7 +373,7 @@ async function handleSetUsage(
 
   const limit = state.quotas[providerId].limit;
   const pct = limit > 0 ? (used / limit) * 100 : 0;
-  return `Set ${providerId} usage to ${used.toLocaleString()} tokens (${pct.toFixed(1)}%)`;
+  return `Set ${providerId} usage to ${used.toLocaleString()} tokens${limit > 0 ? ` (${pct.toFixed(1)}%)` : ""}`;
 }
 
 async function handleReset(
@@ -351,6 +390,113 @@ async function handleReset(
   saveState();
 
   return `Reset quota for ${providerId}`;
+}
+
+async function handleSetResetDate(
+  state: RouterState,
+  saveState: () => void,
+  providerId: string,
+  dateStr: string
+): Promise<string> {
+  // Initialize provider if not exists
+  if (!state.quotas[providerId]) {
+    state.quotas[providerId] = {
+      used: 0,
+      limit: 0,
+      lastReset: Date.now(),
+      nextReset: 0,
+    };
+  }
+
+  // Parse the date string
+  let resetDate: Date;
+
+  // Handle relative dates like "in 5 days"
+  const relativeMatch = dateStr.match(/^in\s+(\d+)\s+(day|hour|minute|week)s?$/i);
+  if (relativeMatch) {
+    const amount = parseInt(relativeMatch[1], 10);
+    const unit = relativeMatch[2].toLowerCase();
+    resetDate = new Date();
+
+    switch (unit) {
+      case "minute":
+        resetDate.setMinutes(resetDate.getMinutes() + amount);
+        break;
+      case "hour":
+        resetDate.setHours(resetDate.getHours() + amount);
+        break;
+      case "day":
+        resetDate.setDate(resetDate.getDate() + amount);
+        break;
+      case "week":
+        resetDate.setDate(resetDate.getDate() + amount * 7);
+        break;
+    }
+  } else {
+    // Try to parse as a date
+    resetDate = new Date(dateStr);
+
+    // If that fails, try some common formats
+    if (isNaN(resetDate.getTime())) {
+      // Try "Feb 12 7AM" format
+      const monthDayTime = dateStr.match(
+        /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d+)(?:\s+(\d+)(?::(\d+))?\s*(AM|PM)?)?$/i
+      );
+
+      if (monthDayTime) {
+        const months: Record<string, number> = {
+          jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+          jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+        };
+        const month = months[monthDayTime[1].toLowerCase()];
+        const day = parseInt(monthDayTime[2], 10);
+        let hour = parseInt(monthDayTime[3] ?? "0", 10);
+        const minute = parseInt(monthDayTime[4] ?? "0", 10);
+        const ampm = monthDayTime[5]?.toUpperCase();
+
+        if (ampm === "PM" && hour !== 12) hour += 12;
+        if (ampm === "AM" && hour === 12) hour = 0;
+
+        resetDate = new Date();
+        resetDate.setMonth(month, day);
+        resetDate.setHours(hour, minute, 0, 0);
+
+        // If the date is in the past, assume next year
+        if (resetDate.getTime() < Date.now()) {
+          resetDate.setFullYear(resetDate.getFullYear() + 1);
+        }
+      }
+    }
+  }
+
+  if (isNaN(resetDate.getTime())) {
+    return `Could not parse date: ${dateStr}\n\nExamples:\n  Feb 12 7AM\n  2026-02-12T07:00\n  in 5 days`;
+  }
+
+  state.quotas[providerId].nextReset = resetDate.getTime();
+  saveState();
+
+  const formattedDate = resetDate.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+
+  const hoursUntil = (resetDate.getTime() - Date.now()) / (1000 * 60 * 60);
+  const daysUntil = Math.floor(hoursUntil / 24);
+  const remainingHours = Math.round(hoursUntil % 24);
+
+  let timeUntil = "";
+  if (daysUntil > 0) {
+    timeUntil = `${daysUntil}d ${remainingHours}h`;
+  } else {
+    timeUntil = `${remainingHours}h`;
+  }
+
+  return `Set ${providerId} reset date to ${formattedDate} (${timeUntil} from now)`;
 }
 
 async function handleAnalyze(
@@ -497,6 +643,9 @@ async function handleSync(
 
   const usage = await fetchOpenClawUsage();
 
+  // Track which providers we synced
+  const syncedProviders = new Set<string>();
+
   if (usage.length === 0) {
     lines.push("No usage data found from OpenClaw.");
     lines.push("");
@@ -505,65 +654,94 @@ async function handleSync(
     lines.push("  - Providers haven't been used recently");
     lines.push("");
     lines.push("Check 'openclaw models' for auth status.");
-    return lines.join("\n");
-  }
+  } else {
+    for (const entry of usage) {
+      if (entry.windows.length === 0) continue;
 
-  for (const entry of usage) {
-    if (entry.windows.length === 0) continue;
+      syncedProviders.add(entry.provider);
 
-    // Find the most critical window (highest usage percentage)
-    const criticalWindow = entry.windows.reduce((max, w) =>
-      w.usedPercent > max.usedPercent ? w : max
-    );
+      // Find the most critical window (highest usage percentage)
+      const criticalWindow = entry.windows.reduce((max, w) =>
+        w.usedPercent > max.usedPercent ? w : max
+      );
 
-    const percent = criticalWindow.usedPercent;
-    const label = criticalWindow.label;
-    const remaining = criticalWindow.remainingText ?? "";
+      const percent = criticalWindow.usedPercent;
+      const label = criticalWindow.label;
 
-    lines.push(`✓ ${entry.provider}:`);
+      lines.push(`✓ ${entry.provider}:`);
 
-    // Show all windows with the critical one marked
-    for (const w of entry.windows) {
-      const isCritical = w === criticalWindow;
-      const marker = isCritical ? "→" : " ";
-      const remainingStr = w.remainingText ? ` (${w.remainingText} left)` : "";
-      lines.push(`  ${marker} ${w.label}: ${w.usedPercent.toFixed(1)}% used${remainingStr}`);
-    }
+      // Show all windows with the critical one marked
+      for (const w of entry.windows) {
+        const isCritical = w === criticalWindow;
+        const marker = isCritical ? "→" : " ";
+        const remainingStr = w.remainingText ? ` (${w.remainingText} left)` : "";
+        lines.push(`  ${marker} ${w.label}: ${w.usedPercent.toFixed(1)}% used${remainingStr}`);
+      }
 
-    // Store percentage-based usage
-    if (state.quotas[entry.provider]) {
-      const quota = state.quotas[entry.provider];
+      // Store percentage-based usage
+      if (state.quotas[entry.provider]) {
+        const quota = state.quotas[entry.provider];
 
-      // Store the percentage directly
-      quota.percentUsed = percent;
-      quota.percentSource = label;
+        // Store the percentage directly
+        quota.percentUsed = percent;
+        quota.percentSource = label;
 
-      if (quota.limit > 0) {
-        // If we have a limit, also calculate token usage
-        const estimatedUsed = Math.round((percent / 100) * quota.limit);
-        tracker.setUsage(entry.provider, estimatedUsed);
-        lines.push(`  Synced: ${estimatedUsed.toLocaleString()} tokens (${percent.toFixed(1)}%)`);
+        if (quota.limit > 0) {
+          // If we have a limit, also calculate token usage
+          const estimatedUsed = Math.round((percent / 100) * quota.limit);
+          tracker.setUsage(entry.provider, estimatedUsed);
+          lines.push(`  Synced: ${estimatedUsed.toLocaleString()} tokens (${percent.toFixed(1)}%)`);
+        } else {
+          lines.push(`  Synced: ${percent.toFixed(1)}% (${label} window)`);
+        }
       } else {
+        // Initialize quota for this provider
+        state.quotas[entry.provider] = {
+          used: 0,
+          limit: 0,
+          lastReset: Date.now(),
+          nextReset: 0,
+          percentUsed: percent,
+          percentSource: label,
+        };
         lines.push(`  Synced: ${percent.toFixed(1)}% (${label} window)`);
       }
-    } else {
-      // Initialize quota for this provider
-      state.quotas[entry.provider] = {
-        used: 0,
-        limit: 0,
-        lastReset: Date.now(),
-        nextReset: 0,
-        percentUsed: percent,
-        percentSource: label,
-      };
-      lines.push(`  Synced: ${percent.toFixed(1)}% (${label} window)`);
-    }
 
-    lines.push("");
+      lines.push("");
+    }
   }
 
   saveState();
-  lines.push("Sync complete.");
+
+  if (usage.length > 0) {
+    lines.push("Sync complete.");
+  }
+
+  // Check for Anthropic - needs manual tracking due to API limitations
+  if (!syncedProviders.has("anthropic") && state.quotas["anthropic"]) {
+    lines.push("");
+    lines.push("⚠ Anthropic requires manual tracking:");
+    lines.push("  Claude Code tokens only have 'user:inference' scope,");
+    lines.push("  not 'user:profile' needed for usage API access.");
+    lines.push("");
+    const currentAnthropicUsage = state.quotas["anthropic"].percentUsed;
+    if (currentAnthropicUsage !== undefined) {
+      lines.push(`  Current: ${currentAnthropicUsage.toFixed(1)}% (${state.quotas["anthropic"].percentSource ?? "manual"})`);
+    }
+    lines.push("");
+    lines.push("  To update manually:");
+    lines.push("    openclaw router set-usage anthropic 79%");
+    lines.push("");
+    lines.push("  Check your usage at: https://claude.ai/settings/usage");
+  } else if (!syncedProviders.has("anthropic") && !state.quotas["anthropic"]) {
+    // Initialize anthropic tracking if it doesn't exist
+    lines.push("");
+    lines.push("ℹ Anthropic not configured for tracking.");
+    lines.push("  To start manual tracking:");
+    lines.push("    openclaw router set-usage anthropic 79%");
+    lines.push("");
+    lines.push("  Check your usage at: https://claude.ai/settings/usage");
+  }
 
   return lines.join("\n");
 }
