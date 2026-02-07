@@ -197,13 +197,24 @@ export class ProviderRegistry {
     const quota = state.quotas[id];
     if (!quota) return null;
 
+    // Calculate percent used: prefer synced percentage, then calculate from limit
+    let percentUsed: number;
+    if (quota.limit > 0) {
+      percentUsed = quota.used / quota.limit;
+    } else if (quota.percentUsed !== undefined) {
+      // Use synced percentage from OpenClaw (stored as 0-100, convert to 0-1)
+      percentUsed = quota.percentUsed / 100;
+    } else {
+      percentUsed = 0;
+    }
+
     return {
       provider: id,
       quotaType: provider.config.quotaType ?? "tokens",
       limit: quota.limit,
       used: quota.used,
       remaining: Math.max(0, quota.limit - quota.used),
-      percentUsed: quota.limit > 0 ? quota.used / quota.limit : 0,
+      percentUsed,
       resetAt: quota.nextReset > 0 ? new Date(quota.nextReset) : undefined,
       lastUpdated: new Date(state.lastUpdated),
     };

@@ -336,6 +336,8 @@ export interface RouterState {
     limit: number;
     lastReset: number;
     nextReset: number;
+    percentUsed?: number;        // Percentage from OpenClaw sync (when limit unknown)
+    percentSource?: string;      // e.g., "5h", "Day" - which window the percent is from
   }>;
 
   // Budget tracking

@@ -45,6 +45,17 @@ export class QuotaPredictor {
       };
     }
 
+    // If limit is 0 (unknown), we can't predict exhaustion
+    if (quota.limit === 0) {
+      return {
+        provider,
+        willExhaust: false,
+        confidence: 0.3,
+        trend: this.getUsageTrend(provider),
+        recommendation: `No limit set. Use 'openclaw router set-usage ${provider} <value>' to sync.`,
+      };
+    }
+
     // If already exhausted
     if (quota.used >= quota.limit) {
       const resetDate = quota.nextReset > 0 ? new Date(quota.nextReset) : undefined;

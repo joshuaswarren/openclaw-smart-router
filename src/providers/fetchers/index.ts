@@ -117,19 +117,46 @@ export async function fetchProviderQuota(
 }
 
 // =============================================================================
-// Providers without usage APIs
+// OpenClaw Built-in Usage Tracking
+// =============================================================================
+
+// Re-export OpenClaw usage fetcher
+export {
+  fetchOpenClawUsage,
+  getProviderUsage,
+  parseModelsOutput,
+  type ProviderUsage,
+  type UsageWindow,
+} from "./openclaw.js";
+
+// =============================================================================
+// Provider Tracking Methods
 // =============================================================================
 
 /**
- * Known providers that do NOT have usage APIs.
- * For these, we must track usage ourselves via llm_end hooks.
+ * Providers with OpenClaw built-in usage tracking.
+ * OpenClaw fetches real-time quota from provider APIs:
+ * - Anthropic: claude.ai/api/organizations/{orgId}/usage
+ * - Codex: chatgpt.com/backend-api/wham/usage
+ * - Copilot, Gemini, Z.ai, MiniMax also have fetchers
+ *
+ * Unfortunately this data isn't exposed to plugins via the SDK.
+ * We can parse `openclaw models` output to get this data.
+ */
+export const OPENCLAW_TRACKED_PROVIDERS = [
+  "anthropic",
+  "openai-codex",
+  "google",
+  "zai",
+  "github-copilot",
+] as const;
+
+/**
+ * Providers we track ourselves via llm_end hooks.
+ * For providers not tracked by OpenClaw or where we need more granular data.
  */
 export const SELF_TRACKED_PROVIDERS = [
-  "anthropic", // No public usage API
-  "openai-codex", // No usage API for Codex tier
-  "google", // Free tier has RPM/RPD limits, but no usage API
   "kimi", // No known usage API
-  "zai", // No known usage API
 ] as const;
 
 /**

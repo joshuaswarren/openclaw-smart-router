@@ -152,13 +152,13 @@ function initializeFromOpenClawConfig(
 
         registry.register(providerId, pluginProviderConfig, models);
 
-        // Initialize quota tracking
-        if (pluginProviderConfig.limit) {
+        // Initialize quota tracking for all providers (self-tracked or with explicit limit)
+        if (pluginProviderConfig.quotaSource !== "unlimited") {
           const nextReset = pluginProviderConfig.resetSchedule
             ? calculateNextReset(pluginProviderConfig.resetSchedule).getTime()
             : 0;
 
-          initQuota(state, providerId, pluginProviderConfig.limit, nextReset);
+          initQuota(state, providerId, pluginProviderConfig.limit ?? 0, nextReset);
         }
 
         // Initialize budget tracking
@@ -192,13 +192,13 @@ function initializeFromPluginConfig(
     const models = providerConfig.local?.models ?? [];
     registry.register(providerId, providerConfig, models);
 
-    // Initialize quota tracking
-    if (providerConfig.limit) {
+    // Initialize quota tracking for all providers (self-tracked or with explicit limit)
+    if (providerConfig.quotaSource !== "unlimited") {
       const nextReset = providerConfig.resetSchedule
         ? calculateNextReset(providerConfig.resetSchedule).getTime()
         : 0;
 
-      initQuota(state, providerId, providerConfig.limit, nextReset);
+      initQuota(state, providerId, providerConfig.limit ?? 0, nextReset);
     }
 
     // Initialize budget tracking
