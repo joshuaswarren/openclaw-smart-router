@@ -21,8 +21,8 @@ export interface ResetSchedule {
 // Provider Configuration
 // =============================================================================
 
-export type QuotaSource = "api" | "manual" | "unlimited";
-export type QuotaType = "tokens" | "requests";
+export type QuotaSource = "api" | "manual" | "unlimited" | "self-tracked";
+export type QuotaType = "tokens" | "requests" | "messages" | "budget";
 export type ProviderTier = "premium" | "standard" | "budget" | "free" | "local";
 export type LocalModelType = "mlx" | "ollama" | "vllm" | "lmstudio" | "generic";
 export type CapabilitySource = "huggingface" | "manual" | "infer";

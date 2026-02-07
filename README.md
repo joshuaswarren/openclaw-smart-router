@@ -35,14 +35,21 @@ npm install && npm run build
       "mode": "dry-run",
       "providers": {
         "anthropic": {
-          "quotaSource": "manual",
-          "limit": 100000000,
+          "quotaSource": "self-tracked",
+          "quotaType": "tokens",
+          "tier": "premium",
           "resetSchedule": { "type": "weekly", "dayOfWeek": 3, "hour": 7 }
         },
         "openai-codex": {
-          "quotaSource": "manual",
-          "limit": 50000000,
+          "quotaSource": "self-tracked",
+          "quotaType": "messages",
+          "tier": "premium",
           "resetSchedule": { "type": "fixed", "fixedDate": "2026-02-09T14:36:00Z" }
+        },
+        "openrouter": {
+          "quotaSource": "api",
+          "quotaType": "budget",
+          "tier": "budget"
         }
       }
     }
@@ -127,6 +134,46 @@ Chat with OpenClaw using these capabilities:
 | `dry-run` | Preview optimizations. Ask before applying. (Default) |
 | `auto` | Automatically apply safe (reversible) optimizations. |
 
+## Quota Tracking
+
+### How Usage is Tracked
+
+Most LLM providers don't expose usage APIs, so this plugin uses multiple tracking strategies:
+
+| Provider | Method | Notes |
+|----------|--------|-------|
+| **OpenRouter** | API | ✅ Real-time usage via `/api/v1/auth/key` |
+| **Anthropic** | Self-tracked | No usage API. We count tokens from responses. |
+| **OpenAI Codex** | Self-tracked | Uses message-based quotas (Pro: 300-1500/5hrs). We count messages. |
+| **Google** | Self-tracked | Free tier: 1000 RPD. We count requests. |
+| **Kimi, Z.ai, etc.** | Self-tracked | No usage APIs. We count tokens from responses. |
+
+### Quota Types
+
+| Type | Unit | Example Providers |
+|------|------|-------------------|
+| `tokens` | Input + output tokens | Anthropic, OpenAI API |
+| `messages` | Conversations/completions | OpenAI Codex (tier-based) |
+| `requests` | API calls per day | Google free tier |
+| `budget` | USD spend | OpenRouter |
+
+### Self-Tracked Providers
+
+For providers without usage APIs, we track usage ourselves via the `llm_end` hook:
+
+1. **We don't know your actual limits** - Set them manually with `router set-usage`
+2. **Tracking starts from zero** - Historical usage before plugin install is unknown
+3. **Reset timing may drift** - We reset when configured, not when your provider does
+
+**Recommended workflow:**
+
+```bash
+# Check your provider's dashboard for current usage
+# Then sync the plugin:
+openclaw router set-usage anthropic 79%
+openclaw router set-usage openai-codex 91%
+```
+
 ## Configuration Reference
 
 ```json
@@ -142,12 +189,12 @@ Chat with OpenClaw using these capabilities:
       // Provider-specific configuration
       "providers": {
         "anthropic": {
-          // How to track quota: api, manual, unlimited
-          "quotaSource": "manual",
-          // Token or request limit
-          "limit": 100000000,
-          // What the limit measures: tokens, requests
+          // How to track: api, manual, unlimited, self-tracked
+          "quotaSource": "self-tracked",
+          // What the limit measures: tokens, requests, messages, budget
           "quotaType": "tokens",
+          // Optional: set a limit for warnings (omit if unknown)
+          // "limit": 10000000,
           // When quota resets
           "resetSchedule": {
             "type": "weekly",    // daily, weekly, monthly, fixed

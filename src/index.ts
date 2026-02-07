@@ -17,6 +17,7 @@ import { CapabilityScorer } from "./capabilities/scorer.js";
 import { ModelMatcher } from "./capabilities/matcher.js";
 import { Optimizer } from "./optimization/optimizer.js";
 import { detectLocalServers } from "./providers/local/detector.js";
+import { fetchProviderQuota, hasQuotaFetcher } from "./providers/fetchers/index.js";
 import { registerTools } from "./interface/tools.js";
 import { registerCli } from "./interface/cli.js";
 import { readFileSync, existsSync } from "fs";
@@ -94,6 +95,9 @@ export default {
       id: "openclaw-smart-router",
       start: async () => {
         log.info("smart router service started");
+
+        // Fetch API-based quotas (e.g., OpenRouter)
+        await fetchApiBasedQuotas(config, state, doSaveState);
 
         // Detect local model servers
         if (config.localModelPreference !== "never") {
@@ -248,6 +252,76 @@ async function detectAndRegisterLocalModels(
     };
   } catch (err) {
     log.error("failed to detect local models", err);
+  }
+}
+
+/**
+ * Fetch quota data from providers that support API-based tracking
+ */
+async function fetchApiBasedQuotas(
+  config: SmartRouterConfig,
+  state: RouterState,
+  saveState: () => void
+): Promise<void> {
+  for (const [providerId, providerConfig] of Object.entries(config.providers)) {
+    // Only fetch for providers with quotaSource: "api"
+    if (providerConfig.quotaSource !== "api") continue;
+
+    // Check if we have a fetcher for this provider
+    if (!hasQuotaFetcher(providerId)) {
+      log.warn(`provider ${providerId} has quotaSource: api but no fetcher available`);
+      continue;
+    }
+
+    // Get API key from environment (common patterns)
+    const envVarNames = [
+      `${providerId.toUpperCase().replace(/-/g, "_")}_API_KEY`,
+      `${providerId.toUpperCase()}_API_KEY`,
+    ];
+
+    let apiKey: string | undefined;
+    for (const envVar of envVarNames) {
+      if (process.env[envVar]) {
+        apiKey = process.env[envVar];
+        break;
+      }
+    }
+
+    if (!apiKey) {
+      log.debug(`no API key found for ${providerId} (tried: ${envVarNames.join(", ")})`);
+      continue;
+    }
+
+    try {
+      log.debug(`fetching quota for ${providerId}...`);
+      const result = await fetchProviderQuota(providerId, apiKey);
+
+      if (result.success && result.quota) {
+        // Update state with fetched quota
+        if (!state.quotas[providerId]) {
+          state.quotas[providerId] = {
+            limit: 0,
+            used: 0,
+            lastReset: 0,
+            nextReset: 0,
+          };
+        }
+
+        state.quotas[providerId].limit = result.quota.limit;
+        state.quotas[providerId].used = result.quota.used;
+        state.lastUpdated = Date.now();
+
+        log.info(
+          `${providerId}: fetched quota - ${result.quota.remaining}/${result.quota.limit} remaining`
+        );
+
+        saveState();
+      } else {
+        log.warn(`failed to fetch quota for ${providerId}: ${result.error}`);
+      }
+    } catch (err) {
+      log.error(`error fetching quota for ${providerId}`, err);
+    }
   }
 }
 

@@ -23,19 +23,19 @@
           "properties": {
             "quotaSource": {
               "type": "string",
-              "enum": ["api", "manual", "unlimited"],
-              "default": "manual",
-              "description": "How to track quota for this provider"
+              "enum": ["api", "manual", "unlimited", "self-tracked"],
+              "default": "self-tracked",
+              "description": "How to track quota: api (fetch from provider), manual (user sets limit), unlimited (no limit), self-tracked (track usage via hooks, no hard limit)"
             },
             "limit": {
               "type": "number",
-              "description": "Token or request limit for manual tracking"
+              "description": "Token/request/message limit (optional for self-tracked)"
             },
             "quotaType": {
               "type": "string",
-              "enum": ["tokens", "requests"],
+              "enum": ["tokens", "requests", "messages", "budget"],
               "default": "tokens",
-              "description": "What the limit measures"
+              "description": "What the limit measures: tokens, requests per day, messages per window, or USD budget"
             },
             "resetSchedule": {
               "type": "object",

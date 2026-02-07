@@ -46,9 +46,9 @@ const CapabilityConfigSchema = z.object({
 });
 
 const ProviderConfigSchema = z.object({
-  quotaSource: z.enum(["api", "manual", "unlimited"]).default("manual"),
+  quotaSource: z.enum(["api", "manual", "unlimited", "self-tracked"]).default("self-tracked"),
   limit: z.number().positive().optional(),
-  quotaType: z.enum(["tokens", "requests"]).default("tokens"),
+  quotaType: z.enum(["tokens", "requests", "messages", "budget"]).default("tokens"),
   resetSchedule: ResetScheduleSchema.optional(),
   budget: BudgetConfigSchema.optional(),
   capabilities: CapabilityConfigSchema.optional(),
